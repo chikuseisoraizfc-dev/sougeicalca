@@ -519,7 +519,13 @@ function saveEditLoc() {
   if(!loc) return;
   const isFixed=loc.type==='facility'||loc.type==='home';
   if(!isFixed) loc.name=document.getElementById('edit-loc-name').value.trim()||loc.name;
-  loc.address=document.getElementById('edit-loc-address').value.trim();
+  const oldAddr=loc.address;
+  const newAddr=document.getElementById('edit-loc-address').value.trim();
+  loc.address=newAddr;
+  // 住所が変更された場合、この場所の距離データを削除（再計算させる）
+  if(oldAddr!==newAddr && newAddr!=='') {
+    Object.keys(state.distances).forEach(k=>{ if(k.includes(id)) delete state.distances[k]; });
+  }
   saveState(); closeModal('edit-loc-modal');
   setTimeout(()=>renderLocations(), 50);
 }
@@ -579,10 +585,14 @@ async function autoCalcDist() {
     btn.textContent='🗺 住所から距離を自動計算'; btn.disabled=false; return;
   }
 
-  // 距離計算（OSRM）
+  // 距離計算（OSRM）未設定の組み合わせのみ
   const ids=Object.keys(coords);
   const pairs=[];
-  for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++) pairs.push([ids[i],ids[j]]);
+  for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++) {
+    if(!state.distances[ids[i]+'|'+ids[j]]) {
+      pairs.push([ids[i],ids[j]]);
+    }
+  }
   let done=0;
 
   for(const [a,b] of pairs){
