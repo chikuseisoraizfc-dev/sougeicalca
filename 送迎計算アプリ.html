@@ -103,7 +103,7 @@ main{max-width:1100px;margin:0 auto;padding:20px}
     <div id="trip-modal-body"></div>
     <div class="mf">
       <button class="btn bs" onclick="closeModal('trip-modal')">キャンセル</button>
-      <button class="btn bp" onclick="saveTrip()">保存</button>
+      <button class="btn bp" onclick="saveTrip()">保存して閉じる</button>
     </div>
   </div>
 </div>
@@ -614,8 +614,8 @@ function renderSettings() {
   document.getElementById('panel-settings').innerHTML=`
     <div class="card"><div class="ct">🏢 基本情報</div>
       <div class="fr c2">
-        <div class="fg"><label>事業所名</label><input id="s-fac" value="${s.facilityName}" placeholder="事業所名"></div>
-        <div class="fg"><label>担当者氏名</label><input id="s-staff" value="${s.staffName}" placeholder="氏名"></div>
+        <div class="fg"><label>事業所名</label><input id="s-fac" value="${s.facilityName}" placeholder="事業所名" oninput="autoSaveSettings()"></div>
+        <div class="fg"><label>担当者氏名</label><input id="s-staff" value="${s.staffName}" placeholder="氏名" oninput="autoSaveSettings()"></div>
       </div>
     </div>
     <div class="card"><div class="ct">⛽ 交通費単価設定</div>
@@ -646,7 +646,7 @@ function renderSettings() {
       <div class="ib ii" style="margin-bottom:12px">自宅出発・直帰した場合、通勤距離分の交通費を支給金額から控除します。</div>
       <div class="fr">
         <div class="fg"><label>自宅の住所（距離自動計算に使用）</label>
-          <input id="s-home-addr" value="${homeAddr}" placeholder="例: 茨城県筑西市○○1-2-3">
+          <input id="s-home-addr" value="${homeAddr}" placeholder="例: 茨城県筑西市○○1-2-3" oninput="autoSaveSettings()">
         </div>
       </div>
       <div class="fr c2">
@@ -666,11 +666,22 @@ function renderSettings() {
       </button>
     </div>
     <div class="card"><div class="ct">💾 データのバックアップ</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn bp" onclick="exportJSON()">📤 JSONでエクスポート</button>
-        <button class="btn bs" onclick="importJSON()">📥 JSONからインポート</button>
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:#666;margin-bottom:8px">全データ（設定、場所、距離、記録）</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bp" onclick="exportJSON()">📤 JSONでエクスポート</button>
+          <button class="btn bs" onclick="importJSON()">📥 JSONからインポート</button>
+        </div>
+        <div class="hint">エクスポートしたファイルを別のPCで読み込むことができます。</div>
       </div>
-      <div class="hint" style="margin-top:8px">エクスポートしたファイルを別のPCで読み込むことができます。</div>
+      <div>
+        <div style="font-size:12px;color:#666;margin-bottom:8px">距離データのみ</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bp" onclick="exportDistances()">📤 距離をエクスポート</button>
+          <button class="btn bs" onclick="importDistances()">📥 距離をインポート</button>
+        </div>
+        <div class="hint">PC で計算した距離データをスマートフォンに移す場合に便利です。</div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn bp" onclick="saveSettings()">✔ 設定を保存</button>
@@ -699,6 +710,24 @@ function prvRate() {
   const cd=parseFloat(document.getElementById('s-cd')?.value)||0;
   const cr=parseFloat(document.getElementById('s-cr')?.value)||0;
   const el2=document.getElementById('s-ded'); if(el2) el2.textContent='¥'+N(Math.round(cd*cr));
+  autoSaveSettings();
+}
+
+function autoSaveSettings() {
+  const s=state.settings;
+  s.facilityName=document.getElementById('s-fac')?.value.trim()||'';
+  s.staffName=document.getElementById('s-staff')?.value.trim()||'';
+  s.commuteDistance=parseFloat(document.getElementById('s-cd')?.value)||0;
+  s.commuteRate=parseFloat(document.getElementById('s-cr')?.value)||0;
+  const homeLoc=state.locations.find(l=>l.id==='home');
+  if(homeLoc) homeLoc.address=document.getElementById('s-home-addr')?.value.trim()||'';
+  if(s.useFixedRate){
+    s.fixedRate=parseFloat(document.getElementById('s-fixed-rate')?.value)||0;
+  } else {
+    s.fuelPrice=parseFloat(document.getElementById('s-fp')?.value)||0;
+    s.fuelEfficiency=parseFloat(document.getElementById('s-fe')?.value)||1;
+  }
+  saveState();
 }
 
 function saveSettings() {
@@ -766,6 +795,37 @@ function importJSON() {
         state={...defaultState(),...data};
         saveState(); renderSettings();
         alert('インポート完了しました。');
+      } catch(e) { alert('インポート失敗: '+e.message); }
+    };
+    reader.readAsText(file,'utf-8');
+  };
+  inp.click();
+}
+
+function exportDistances() {
+  const json=JSON.stringify(state.distances, null, 2);
+  const blob=new Blob([json],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='距離データ_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importDistances() {
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.json';
+  inp.onchange=e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try {
+        const distances=JSON.parse(ev.target.result);
+        if(typeof distances!=='object'||distances===null) throw new Error('形式が正しくありません');
+        if(!confirm('現在の距離データをインポートしたデータで上書きします。よろしいですか？')) return;
+        state.distances={...distances};
+        saveState(); renderLocations();
+        alert('距離データをインポートしました。');
       } catch(e) { alert('インポート失敗: '+e.message); }
     };
     reader.readAsText(file,'utf-8');
